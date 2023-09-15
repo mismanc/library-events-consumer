@@ -1,14 +1,15 @@
 package com.library.consumer.model;
 
+import com.library.consumer.domain.LibraryEventType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 
-public record LibraryEvent(
+public record LibraryEventDTO(
         Integer libraryEventId,
         LibraryEventType libraryEventType,
         @NotNull
         @Valid
-        Book book) {
+        BookDTO book) {
 
 
 }

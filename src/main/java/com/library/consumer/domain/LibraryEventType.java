@@ -1,4 +1,4 @@
-package com.library.consumer.model;
+package com.library.consumer.domain;
 
 public enum LibraryEventType {
 
