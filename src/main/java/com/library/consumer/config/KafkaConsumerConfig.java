@@ -9,6 +9,8 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
+import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.List;
@@ -24,7 +26,14 @@ public class KafkaConsumerConfig {
         List<Class<IllegalArgumentException>> exceptionsToIgnore = List.of(IllegalArgumentException.class);
         List<Class<RecoverableDataAccessException>> exceptionsToRetry = List.of(RecoverableDataAccessException.class);
         FixedBackOff fb = new FixedBackOff(1000L, 2);
-        DefaultErrorHandler deh = new DefaultErrorHandler(fb);
+        ExponentialBackOffWithMaxRetries exponentialBackOff = new ExponentialBackOffWithMaxRetries(2);
+        exponentialBackOff.setInitialInterval(1_000L);
+        exponentialBackOff.setMultiplier(2.0);
+        exponentialBackOff.setMaxInterval(2_000L);
+
+        DefaultErrorHandler deh = new DefaultErrorHandler(
+                // fb
+                exponentialBackOff);
         // exceptionsToIgnore.forEach(deh::addNotRetryableExceptions);
         exceptionsToRetry.forEach(deh::addRetryableExceptions);
         deh.setRetryListeners(((record, ex, deliveryAttempt) -> {
