@@ -142,4 +142,22 @@ public class LibraryEventConsumerIT {
 
     }
 
+    @Test
+    public void publishUpdate999IdEvent() throws JsonProcessingException, ExecutionException, InterruptedException {
+        LibraryEvent libraryEvent = LibraryEvent.builder().libraryEventId(999).libraryEventType(LibraryEventType.UPDATE)
+                .book(Book.builder().id(125).author("Islam Between East And West").name("Alija Izetbegovic").build())
+                .build();
+
+        kafkaTemplate.sendDefault(objectMapper.writeValueAsString(libraryEvent)).get();
+
+        // when
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        countDownLatch.await(3, TimeUnit.SECONDS);
+
+        // then
+        verify(consumerListenerSpy, times(3)).onMessage(isA(ConsumerRecord.class));
+        verify(serviceSpy, times(3)).processLibraryEvent(isA(ConsumerRecord.class));
+
+    }
+
 }
