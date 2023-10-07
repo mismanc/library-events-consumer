@@ -1,16 +1,20 @@
 package com.library.consumer.config;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.TopicPartition;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.kafka.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.dao.RecoverableDataAccessException;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
-import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.List;
@@ -20,8 +24,32 @@ import java.util.List;
 @EnableKafka
 public class KafkaConsumerConfig {
 
+    private final KafkaTemplate<Integer, String> kafkaTemplate;
 
-    public DefaultErrorHandler errorHandler(){
+    @Value("${topics.retry}")
+    private String retryTopic;
+
+    @Value("${topics.dlt}")
+    private String deadLetterTopic;
+
+    public KafkaConsumerConfig(KafkaTemplate kafkaTemplate) {
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    public DeadLetterPublishingRecoverer publishingRecover() {
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate, (r, e) -> {
+            if (e.getCause() instanceof RecoverableDataAccessException) {
+                return new TopicPartition(retryTopic, r.partition());
+            }
+
+            return new TopicPartition(deadLetterTopic, r.partition());
+        });
+
+        return recoverer;
+    }
+
+
+    public DefaultErrorHandler errorHandler() {
 
         List<Class<IllegalArgumentException>> exceptionsToIgnore = List.of(IllegalArgumentException.class);
         List<Class<RecoverableDataAccessException>> exceptionsToRetry = List.of(RecoverableDataAccessException.class);
@@ -32,6 +60,7 @@ public class KafkaConsumerConfig {
         exponentialBackOff.setMaxInterval(2_000L);
 
         DefaultErrorHandler deh = new DefaultErrorHandler(
+                publishingRecover(),
                 // fb
                 exponentialBackOff);
         // exceptionsToIgnore.forEach(deh::addNotRetryableExceptions);
