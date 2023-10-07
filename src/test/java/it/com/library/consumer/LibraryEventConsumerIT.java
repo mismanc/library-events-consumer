@@ -8,6 +8,7 @@ import com.library.consumer.domain.LibraryEventType;
 import com.library.consumer.listener.KafkaConsumerListener;
 import com.library.consumer.model.BookDTO;
 import com.library.consumer.model.LibraryEventDTO;
+import com.library.consumer.repository.FailureRecordRepository;
 import com.library.consumer.repository.LibraryEventRepository;
 import com.library.consumer.service.LibraryEventService;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -53,6 +54,9 @@ public class LibraryEventConsumerIT {
 
     @Autowired
     private KafkaTemplate<Integer, String> kafkaTemplate;
+
+    @Autowired
+    private FailureRecordRepository failureRecordRepository;
 
     @Autowired
     private KafkaListenerEndpointRegistry endpointRegistry;
@@ -184,4 +188,51 @@ public class LibraryEventConsumerIT {
         assertEquals(libraryEventJson, consumerRecord.value());
     }
 
+    @Test
+    public void publishUpdateNullIdEventDeadLetter() throws JsonProcessingException, ExecutionException, InterruptedException {
+        LibraryEvent libraryEvent = LibraryEvent.builder().libraryEventType(LibraryEventType.UPDATE)
+                .book(Book.builder().id(125).author("Islam Between East And West").name("Alija Izetbegovic").build())
+                .build();
+
+        String libraryEventJson = objectMapper.writeValueAsString(libraryEvent);
+        kafkaTemplate.sendDefault(libraryEventJson).get();
+
+        // when
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        countDownLatch.await(5, TimeUnit.SECONDS);
+
+        // then
+        verify(consumerListenerSpy, times(1)).onMessage(isA(ConsumerRecord.class));
+        verify(serviceSpy, times(1)).processLibraryEvent(isA(ConsumerRecord.class));
+
+        Map<String, Object> configs = new HashMap<>(KafkaTestUtils.consumerProps("group2", "true", embeddedKafkaBroker));
+        consumer = new DefaultKafkaConsumerFactory<>(configs, new IntegerDeserializer(), new StringDeserializer()).createConsumer();
+        embeddedKafkaBroker.consumeFromAnEmbeddedTopic(consumer, deadLetterTopic);
+
+        ConsumerRecord<Integer, String> consumerRecord = KafkaTestUtils.getSingleRecord(consumer, deadLetterTopic);
+        System.out.println("Consumer record is : " + consumerRecord.value());
+        assertEquals(libraryEventJson, consumerRecord.value());
+    }
+
+    @Test
+    public void publishUpdateNullIdEventFailure() throws JsonProcessingException, ExecutionException, InterruptedException {
+        LibraryEvent libraryEvent = LibraryEvent.builder().libraryEventType(LibraryEventType.UPDATE)
+                .book(Book.builder().id(125).author("Islam Between East And West").name("Alija Izetbegovic").build())
+                .build();
+
+        String libraryEventJson = objectMapper.writeValueAsString(libraryEvent);
+        kafkaTemplate.sendDefault(libraryEventJson).get();
+
+        // when
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        countDownLatch.await(5, TimeUnit.SECONDS);
+
+        // then
+        verify(consumerListenerSpy, times(1)).onMessage(isA(ConsumerRecord.class));
+        verify(serviceSpy, times(1)).processLibraryEvent(isA(ConsumerRecord.class));
+
+        assertEquals(1, failureRecordRepository.count());
+        failureRecordRepository.findAll().forEach(rec -> System.out.println("failureRecord: " + rec));
+
+    }
 }
